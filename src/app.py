@@ -21,11 +21,17 @@ from mcp_server import MCPAcademicServer
 from prompts import (
     CHATBOT_BASELINE_PROMPT,
     REACT_AGENT_SYSTEM_PROMPT,
-    MAX_ITERATIONS
+    MAX_ITERATIONS,
+    check_input_prompt_injection,
 )
 from providers import get_llm_provider
 
 load_dotenv()
+
+
+def is_sensitive_tool(tool_name: str) -> bool:
+    """Xác định tool có thể thay đổi dữ liệu hoặc tạo tác động rủi ro."""
+    return tool_name == "update_student_profile"
 
 def load_test_cases():
     """Tải danh sách 5 test cases từ config/test_cases.json hoặc config/test_cases.example.json"""
@@ -61,12 +67,27 @@ def run_baseline_chatbot(user_query: str, provider):
     print(f"🤖 Chatbot phản hồi:\n{response}")
 
 
-def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) -> list:
+def run_react_agent(
+    user_query: str,
+    provider,
+    mcp_server: MCPAcademicServer,
+    interactive_hitl: bool = False,
+) -> list:
     """
     [REACT AGENT LOOP] Thực thi vòng lặp Thought -> Action -> Observation với MCP Server
     Trả về danh sách trace log của phiên thực thi.
     """
     print(f"\n🤖 [REACT AGENT] Câu hỏi: {user_query}")
+
+    is_injection, warning = check_input_prompt_injection(user_query)
+    if is_injection:
+        print(f"⚠️ [INPUT GUARDRAIL]: {warning}")
+        return [{
+            "step": 0,
+            "query": user_query,
+            "action_type": "INPUT_BLOCKED",
+            "output": warning,
+        }]
     
     step = 0
     trace_logs = []
@@ -104,6 +125,29 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) ->
             arguments = llm_response.get("arguments", {})
             
             print(f"🛠️ [Action Proposed]: {tool_name}({arguments})")
+
+            if is_sensitive_tool(tool_name):
+                hitl_warning = (
+                    f"[HITL WARNING]: Tool '{tool_name}' là hành động nhạy cảm!"
+                )
+                print(hitl_warning)
+
+                if interactive_hitl:
+                    confirmation = input("Bạn có xác nhận thực thi không? (Y/N): ").strip().upper()
+                    if confirmation != "Y":
+                        denial_message = "Hành động đã bị hủy vì chưa được con người xác nhận."
+                        print(f"🛑 [HITL BLOCKED]: {denial_message}")
+                        trace_logs.append({
+                            "step": step,
+                            "query": user_query,
+                            "action_type": "HITL_BLOCKED",
+                            "tool_name": tool_name,
+                            "arguments": arguments,
+                            "output": denial_message,
+                        })
+                        break
+                else:
+                    print("✅ [HITL SIMULATION]: Tự động cho phép trong chế độ kiểm thử.")
             
             # Thực thi Tool qua MCP Server
             mcp_result = mcp_server.call_tool(tool_name, arguments)

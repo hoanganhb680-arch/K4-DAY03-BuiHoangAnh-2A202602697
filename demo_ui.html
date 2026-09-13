@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VinUni Agent Trace Console</title>
+  <style>
+    :root { --ink:#182329; --muted:#607078; --paper:#f5f1e8; --line:#d9d2c5; --orange:#d85d36; --teal:#167c80; --white:#fffdf8; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:radial-gradient(circle at 90% 0%, #f1c9a4 0 16%, transparent 38%), var(--paper); font:16px/1.45 Georgia, serif; }
+    header { max-width:1180px; margin:0 auto; padding:42px 24px 26px; display:flex; justify-content:space-between; align-items:end; gap:24px; }
+    h1 { margin:0; max-width:650px; font-size:clamp(2rem, 5vw, 4.6rem); line-height:.94; letter-spacing:0; }
+    .kicker { color:var(--orange); font:700 12px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing:0; text-transform:uppercase; }
+    .status { border-left:4px solid var(--teal); padding-left:14px; color:var(--muted); max-width:245px; }
+    main { max-width:1180px; margin:0 auto; padding:0 24px 50px; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:16px 0; }
+    input[type=file] { max-width:300px; }
+    button, .file-label { border:1px solid var(--ink); background:var(--ink); color:white; padding:10px 14px; cursor:pointer; font:600 14px ui-monospace, SFMono-Regular, Consolas, monospace; }
+    button:hover, .file-label:hover { background:var(--orange); border-color:var(--orange); }
+    .hint { color:var(--muted); font-size:14px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:22px; }
+    .panel { background:color-mix(in srgb, var(--white) 92%, transparent); border:1px solid var(--line); padding:20px; min-height:260px; }
+    .panel h2 { margin:0 0 18px; font-size:1.2rem; }
+    .chat { border-left:4px solid var(--orange); }
+    .agent { border-left:4px solid var(--teal); }
+    .bubble { background:#fff; border:1px solid var(--line); padding:12px; margin:10px 0; }
+    .bubble strong { display:block; color:var(--muted); font:700 11px ui-monospace, SFMono-Regular, Consolas, monospace; text-transform:uppercase; }
+    .trace { margin-top:22px; }
+    .event { display:grid; grid-template-columns:72px 1fr auto; gap:14px; align-items:start; padding:15px 0; border-top:1px solid var(--line); }
+    .step { color:var(--orange); font:700 13px ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .event-title { font-weight:700; }
+    .event pre { margin:7px 0 0; padding:10px; overflow:auto; background:#243238; color:#f6eee2; font:12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .latency { color:var(--muted); font:12px ui-monospace, SFMono-Regular, Consolas, monospace; white-space:nowrap; }
+    @media (max-width:760px) { header { display:block; } .status { margin-top:20px; } .grid { grid-template-columns:1fr; } .event { grid-template-columns:58px 1fr; } .latency { grid-column:2; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><div class="kicker">Day 03 / Agent Harness</div><h1>Chatbot vs<br>ReAct Agent</h1></div>
+    <div class="status" id="status">Chưa nạp trace. Chọn `docs/trace_waterfall.json` để bắt đầu.</div>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label class="file-label" for="traceFile">Nạp Waterfall Trace</label>
+      <input id="traceFile" type="file" accept="application/json,.json">
+      <button id="clearButton" type="button">Xóa trace</button>
+      <span class="hint">Mở file này trực tiếp bằng Chrome/Edge, sau đó chọn file JSON.</span>
+    </div>
+    <section class="grid">
+      <article class="panel chat"><h2>Chatbot Baseline</h2><div class="bubble"><strong>Mode</strong>Trả lời trực tiếp từ system prompt, không gọi tool.</div><div class="bubble"><strong>Guardrail</strong>Input injection được kiểm tra trước khi gửi câu hỏi.</div></article>
+      <article class="panel agent"><h2>ReAct Agent</h2><div class="bubble"><strong>Mode</strong>LLM đề nghị tool, application kiểm duyệt và thực thi.</div><div class="bubble"><strong>HITL</strong>Tool nhạy cảm yêu cầu xác nhận con người trước khi ghi dữ liệu.</div></article>
+    </section>
+    <section class="panel trace"><h2>Waterfall Trace thời gian thực</h2><div id="events"><div class="hint">Chưa có sự kiện.</div></div></section>
+  </main>
+  <script>
+    const fileInput = document.querySelector('#traceFile');
+    const events = document.querySelector('#events');
+    const status = document.querySelector('#status');
+    function render(trace) {
+      events.replaceChildren();
+      if (!Array.isArray(trace) || trace.length === 0) { events.innerHTML = '<div class="hint">Trace rỗng hoặc không đúng định dạng mảng JSON.</div>'; return; }
+      trace.forEach((item, index) => {
+        const row = document.createElement('div'); row.className = 'event';
+        const step = document.createElement('div'); step.className = 'step'; step.textContent = `STEP ${item.step ?? index + 1}`;
+        const body = document.createElement('div');
+        const title = document.createElement('div'); title.className = 'event-title'; title.textContent = item.action_type || 'EVENT';
+        const details = document.createElement('pre'); details.textContent = JSON.stringify(item, null, 2);
+        body.append(title, details);
+        const latency = document.createElement('div'); latency.className = 'latency'; latency.textContent = item.latency_ms == null ? '' : `${item.latency_ms} ms`;
+        row.append(step, body, latency); events.append(row);
+      });
+      status.textContent = `${trace.length} sự kiện đã nạp từ waterfall trace.`;
+    }
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0]; if (!file) return;
+      try { render(JSON.parse(await file.text())); } catch { status.textContent = 'Không thể đọc JSON trace.'; }
+    });
+    document.querySelector('#clearButton').addEventListener('click', () => { events.innerHTML = '<div class="hint">Chưa có sự kiện.</div>'; status.textContent = 'Đã xóa trace.'; fileInput.value = ''; });
+  </script>
+</body>
+</html>

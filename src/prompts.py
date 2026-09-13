@@ -5,6 +5,31 @@
 
 MAX_ITERATIONS = 5
 
+INJECTION_KEYWORDS = [
+	"ignore previous instructions",
+	"ignore all previous instructions",
+	"bỏ qua hướng dẫn trước đó",
+	"bỏ qua mọi hướng dẫn",
+	"reveal the system prompt",
+	"show me the system prompt",
+	"tiết lộ system prompt",
+	"jailbreak",
+	"dan mode",
+]
+
+
+def check_input_prompt_injection(user_input: str) -> tuple[bool, str]:
+	"""Phát hiện các cụm từ thường được dùng để prompt injection."""
+	normalized_input = user_input.casefold()
+	for keyword in INJECTION_KEYWORDS:
+		if keyword.casefold() in normalized_input:
+			return (
+				True,
+				"Cảnh báo: Câu hỏi có dấu hiệu prompt injection và đã bị chặn.",
+			)
+
+	return False, ""
+
 CHATBOT_BASELINE_PROMPT = """
 Bạn là Trợ lý Học vụ thuộc Đại học VinUni.
 Nhiệm vụ của bạn là giải đáp các thắc mắc chung của sinh viên về quy chế học vụ.
